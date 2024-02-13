@@ -174,6 +174,19 @@ Or for visionOS:
 ```
 > python OpenUSD/build_scripts/build_usd.py --build-target visionOS --build-monolithic /path/to/my_usd_install_dir
 ```
+###### Framework Builds (Experimental)
+
+Builds for Apple platforms may optionally build as a framework using the `--build-apple-framework` flag. 
+
+**NOTE:** This feature is experimental and may change how it functions in future USD builds.
+
+- Framework builds are enabled by default for iOS and visionOS build targets. It can optionally be enabled for macOS.
+- Framework builds enable monolithic builds by default. This may be overridden but is not currently a tested scenario.
+
+To add the Framework to your application:
+
+- Add `OpenUSD.framework` to your Xcode project. It is recommended to set it to `Embed and Sign`.
+- Add `$(SRCROOT)/$(TARGET_NAME)/OpenUSD.framework/Headers` to your targets `SYSTEM_HEADER_SEARCH_PATHS` in Xcode
 
 ##### Windows:
 

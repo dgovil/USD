@@ -955,7 +955,7 @@ ONETBB_URL = "https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2021.9.0.z
 
 def InstallOneTBB(context, force, buildArgs):
     with CurrentWorkingDirectory(DownloadURL(ONETBB_URL, context, force)):
-        RunCMake(context, force, 
+        RunCMake(context, force,
                  ['-DTBB_TEST=OFF',
                   '-DTBB_STRICT=OFF'] + buildArgs)
 
@@ -1053,6 +1053,9 @@ def InstallTBB_MacOS(context, force, buildArgs):
             if MacOSTargetEmbedded(context):
                 env["SDKROOT"] = apple_utils.GetSDKRoot(context)
                 buildArgs.append(f' compiler=clang arch=arm64 extra_inc=big_iron.inc target={context.buildTarget.lower()}')
+            if context.buildAppleFramework and context.buildMonolithic:
+                # Force build of static libs as well
+                buildArgs.append(f" extra_inc=big_iron.inc ")
             makeTBBCmd = 'make -j{procs} arch={arch} {buildArgs}'.format(
                 arch=arch, procs=context.numJobs,
                 buildArgs=" ".join(buildArgs))
@@ -1326,12 +1329,12 @@ def InstallOpenImageIO(context, force, buildArgs):
                      '-DUSE_PYTHON=OFF',
                      '-DSTOP_ON_WARNING=OFF']
 
-        # OIIO's FindOpenEXR module circumvents CMake's normal library 
+        # OIIO's FindOpenEXR module circumvents CMake's normal library
         # search order, which causes versions of OpenEXR installed in
         # /usr/local or other hard-coded locations in the module to
-        # take precedence over the version we've built, which would 
-        # normally be picked up when we specify CMAKE_PREFIX_PATH. 
-        # This may lead to undefined symbol errors at build or runtime. 
+        # take precedence over the version we've built, which would
+        # normally be picked up when we specify CMAKE_PREFIX_PATH.
+        # This may lead to undefined symbol errors at build or runtime.
         # So, we explicitly specify the OpenEXR we want to use here.
         extraArgs.append('-DOPENEXR_ROOT="{instDir}"'
                          .format(instDir=context.instDir))
@@ -1529,9 +1532,7 @@ MATERIALX_URL = "https://github.com/materialx/MaterialX/archive/v1.38.10.zip"
 
 def InstallMaterialX(context, force, buildArgs):
     with CurrentWorkingDirectory(DownloadURL(MATERIALX_URL, context, force)):
-        cmakeOptions = ['-DMATERIALX_BUILD_SHARED_LIBS=ON',
-                        '-DMATERIALX_BUILD_TESTS=OFF'
-        ]
+        cmakeOptions = ['-DMATERIALX_BUILD_TESTS=OFF']
 
         if MacOSTargetEmbedded(context):
             # The materialXShaderGen in hdSt assumes the GLSL shadergen is available
@@ -1550,6 +1551,10 @@ def InstallMaterialX(context, force, buildArgs):
                         '        add_subdirectory(source/MaterialXRenderGlsl)\n' +
                         '    endif()')
                        ], multiLineMatches=True)
+        if MacOS() and context.buildAppleFramework and context.buildMonolithic:
+            cmakeOptions.extend(["-DMATERIALX_BUILD_SHARED_LIBS=OFF"])
+        else:
+            cmakeOptions.extend(["-DMATERIALX_BUILD_SHARED_LIBS=ON"])
 
         cmakeOptions += buildArgs
         RunCMake(context, force, cmakeOptions)
@@ -1790,6 +1795,10 @@ def InstallUSD(context, force, buildArgs):
         if Windows():
             # Increase the precompiled header buffer limit.
             extraArgs.append('-DCMAKE_CXX_FLAGS="/Zm150"')
+        if MacOS():
+            extraArgs.append(f"-DPXR_BUILD_APPLE_FRAMEWORK={'ON' if context.buildAppleFramework else 'OFF'}")
+            if context.macOSCodesign:
+                extraArgs.append(f"-DPXR_APPLE_CODESIGN_IDENTITY={context.macOSCodesign}")
 
         # Make sure to use boost installed by the build script and not any
         # system installed boost
@@ -1910,6 +1919,14 @@ if MacOS():
                        help=("Build target for macOS cross compilation. "
                              "(default: {})".format(
                                 apple_utils.GetBuildTargetDefault())))
+    group.add_argument("--build-simulator", action="store_true",
+                       help="Build using the simulator SDK for embedded targets.")
+    subgroup = group.add_mutually_exclusive_group()
+    subgroup.add_argument("--build-apple-framework", dest="build_apple_framework", action="store_true",
+                          help="Build USD as an Apple Framework (Default if using build)")
+    subgroup.add_argument("--no-build-apple-framework", dest="no_build_apple_framework", action="store_true",
+                          help="Do not build USD as an Apple Framework (Default if macOS)")
+
     if apple_utils.IsHostArm():
         # Intel Homebrew stores packages in /usr/local which unfortunately can
         # be where a lot of other things are too. So we only add this flag on arm macs.
@@ -1945,6 +1962,7 @@ if MacOS():
                        default=codesignDefault, action="store_true",
                        help=("Enable code signing for macOS builds "
                              "(defaults to enabled on Apple Silicon)"))
+    group.add_argument("--codesign-id", dest="macos_codesign_id", type=str)
 
 if Linux():
     group.add_argument("--use-cxx11-abi", type=int, choices=[0, 1],
@@ -1963,8 +1981,7 @@ group = parser.add_argument_group(title="USD Options")
 (SHARED_LIBS, MONOLITHIC_LIB) = (0, 1)
 subgroup = group.add_mutually_exclusive_group()
 subgroup.add_argument("--build-shared", dest="build_type",
-                      action="store_const", const=SHARED_LIBS, 
-                      default=SHARED_LIBS,
+                      action="store_const", const=SHARED_LIBS,
                       help="Build individual shared libraries (default)")
 subgroup.add_argument("--build-monolithic", dest="build_type",
                       action="store_const", const=MONOLITHIC_LIB,
@@ -2225,7 +2242,7 @@ class InstallContext:
 
         self.debugPython = args.debug_python
 
-        self.buildShared = (args.build_type == SHARED_LIBS)
+        self.buildShared = (args.build_type == SHARED_LIBS or not args.build_type)
         self.buildMonolithic = (args.build_type == MONOLITHIC_LIB)
 
         self.ignorePaths = args.ignore_paths or []
@@ -2233,12 +2250,19 @@ class InstallContext:
         if MacOS():
             self.buildTarget = args.build_target
             apple_utils.SetTarget(self, self.buildTarget)
+            self.buildSimulator = args.build_simulator
 
-            self.macOSCodesign = \
-                (args.macos_codesign if hasattr(args, "macos_codesign")
-                 else False)
+            self.macOSCodesign = False
+            if args.macos_codesign:
+                self.macOSCodesign = args.macos_codesign_id or apple_utils.GetCodeSignID()
             if apple_utils.IsHostArm() and args.ignore_homebrew:
                 self.ignorePaths.append("/opt/homebrew")
+
+            self.buildAppleFramework = ((args.build_apple_framework or MacOSTargetEmbedded(self))
+                                        and not args.no_build_apple_framework)
+            if self.buildAppleFramework and not args.build_type:
+                    self.buildShared = False
+                    self.buildMonolithic = True
         else:
             self.buildTarget = ""
 
@@ -2252,13 +2276,14 @@ class InstallContext:
 
         # Some components are disabled for embedded build targets
         embedded = MacOSTargetEmbedded(self)
+        optional_components = not (embedded or (MacOS() and self.buildAppleFramework))
 
         # Optional components
-        self.buildTests = args.build_tests and not embedded
-        self.buildPython = args.build_python and not embedded
-        self.buildExamples = args.build_examples and not embedded
-        self.buildTutorials = args.build_tutorials and not embedded
-        self.buildTools = args.build_tools and not embedded
+        self.buildTests = args.build_tests and optional_components
+        self.buildPython = args.build_python and optional_components
+        self.buildExamples = args.build_examples and optional_components
+        self.buildTutorials = args.build_tutorials and optional_components
+        self.buildTools = args.build_tools and optional_components
 
         # - Documentation
         self.buildDocs = args.build_docs or args.build_python_docs
@@ -2585,6 +2610,7 @@ if context.useCXX11ABI is not None:
 summaryMsg += """\
     Variant                     {buildVariant}
     Target                      {buildTarget}
+    Framework Build             {buildAppleFramework}
     Imaging                     {buildImaging}
       Ptex support:             {enablePtex}
       OpenVDB support:          {enableOpenVDB}
@@ -2669,7 +2695,8 @@ summaryMsg = summaryMsg.format(
     buildMaterialX=("On" if context.buildMaterialX else "Off"),
     buildMayapyTests=("On" if context.buildMayapyTests else "Off"),
     buildAnimXTests=("On" if context.buildAnimXTests else "Off"),
-    enableHDF5=("On" if context.enableHDF5 else "Off"))
+    enableHDF5=("On" if context.enableHDF5 else "Off"),
+    buildAppleFramework=("On" if MacOS() and context.buildAppleFramework else "Off"))
 
 Print(summaryMsg)
 
@@ -2731,8 +2758,9 @@ if Windows():
     ])
 
 if MacOS():
-    if context.macOSCodesign:
-        apple_utils.Codesign(context.usdInstDir, verbosity > 1)
+    # We don't need to codesign when building a framework because it's handled during framework creation
+    if context.macOSCodesign and not context.buildAppleFramework:
+        apple_utils.Codesign(context, verbosity > 1)
 
 additionalInstructions = any([context.buildPython, context.buildTools, context.buildPrman])
 if additionalInstructions:
@@ -2755,3 +2783,12 @@ if context.buildPython or context.buildTools:
 if context.buildPrman:
     Print("See documentation at http://openusd.org/docs/RenderMan-USD-Imaging-Plugin.html "
           "for setting up the RenderMan plugin.\n")
+
+if context.buildAppleFramework:
+    Print("""
+        Add the following framework to your Xcode Project:
+        OpenUSD.framework
+        
+        Set the following compiler argument, to find the headers:
+        SYSTEM_HEADER_SEARCH_PATHS=$(SRCROOT)/$(TARGET_NAME)/OpenUSD.framework/Headers
+    """)
