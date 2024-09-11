@@ -116,10 +116,18 @@ if [ "$EMBEDDED_BUILD" = false ];then
   (cd ${FRAMEWORK_DIR} && ln -s "Versions/Current/${FRAMEWORK_NAME}" ${FRAMEWORK_NAME})
 fi
 
-
+# Fix the linkage on the primary dylib
 fix_linkage "${FRAMEWORK_DIR}/${FRAMEWORK_NAME}"
 install_name_tool -id "@rpath/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" "${FRAMEWORK_DIR}/${FRAMEWORK_NAME}"
 install_name_tool -change "@rpath/${FRAMEWORK_NAME}.framework/Libraries/${FRAMEWORK_NAME}" "@rpath/${FRAMEWORK_NAME}.framework/${FRAMEWORK_NAME}" "${FRAMEWORK_DIR}/${FRAMEWORK_NAME}"
+
+# Prefix includes in the headers with the name of the framework
+HEADER_SET=""
+for i in $(cd $FRAMEWORK_HEADERS_DIR && ls -d */ | cut -f1 -d'/');do
+  HEADER_SET+="${i}|"
+done;
+INCLUDE_PATTERN="^# *include [\"|<]([[:<:]](${HEADER_SET::-1})[[:>:]].*)[\"|>].*$"
+find ${FRAMEWORK_HEADERS_DIR} -type f -name "*.h*" -print0 | xargs -0 sed -i "" -E "s,${INCLUDE_PATTERN},#include <${FRAMEWORK_NAME}/\1>,g"
 
 # Sign the final framework
 echo "Codesigning the framework..."
