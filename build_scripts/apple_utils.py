@@ -439,10 +439,7 @@ def BuildXCFramework(root, targets, args):
     print("""Success! Add the OpenUSD.xcframework to your Xcode Project.""")
 
 def main():
-    
-
-if __name__ == '__main__':
-    main()import argparse
+    import argparse
     parser = argparse.ArgumentParser(description="A set of command line utilities for building on Apple Platforms")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -462,3 +459,7 @@ if __name__ == '__main__':
         BuildXCFramework(args.install_dir, args.build_targets, unknown)
     else:
         raise RuntimeError(f"Unknown command: {command}")
+    
+
+if __name__ == '__main__':
+    main()
