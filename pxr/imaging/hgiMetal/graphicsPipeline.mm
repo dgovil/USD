@@ -18,6 +18,9 @@
 
 #include "pxr/base/tf/diagnostic.h"
 
+#include <iostream>
+
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 HgiMetalGraphicsPipeline::HgiMetalGraphicsPipeline(
@@ -370,6 +373,18 @@ HgiMetalGraphicsPipeline::_CreateDepthStencilState(HgiMetal *hgi)
             MTLCompareFunctionAlways;
         depthStencilStateDescriptor.depthWriteEnabled = NO;
     }
+
+    if (hgi->AreVisionOSOverridesEnabled()) {
+
+        std::cout << "🎃: Descriptor Debug Name : " << _descriptor.debugName.c_str() << "\n"
+              << "Descriptor function :" << depthStencilStateDescriptor.depthCompareFunction << "\n"
+              << "Descriptor has depthWriteEnabled :" << depthStencilStateDescriptor.depthWriteEnabled << " : 🎃:" << std::endl;
+
+
+        depthStencilStateDescriptor.depthCompareFunction =  MTLCompareFunctionGreater;
+        depthStencilStateDescriptor.depthWriteEnabled = YES;
+    }
+
     
     if (_descriptor.depthState.stencilTestEnabled) {
         depthStencilStateDescriptor.backFaceStencil =

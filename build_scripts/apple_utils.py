@@ -441,7 +441,7 @@ def BuildXCFramework(root, targets, args):
     subprocess.check_call(["codesign", "--timestamp", "-s", codesign_id, xcframework_path])
 
 
-    print("""Success! Add the OpenUSD.xcframework to your Xcode Project.""")
+    print("""✅ Success! Add the OpenUSD.xcframework to your Xcode Project.""")
 
 def main():
     import argparse

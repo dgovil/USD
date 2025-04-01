@@ -182,7 +182,34 @@ public:
 
     HGIMETAL_API
     void ReleaseSecondaryCommandBuffer(id<MTLCommandBuffer> commandBuffer);
-    
+
+    HGIMETAL_API
+    void SetRasterizationRateMap(id<MTLRasterizationRateMap> rasterizationMap);
+
+    HGIMETAL_API
+    id<MTLRasterizationRateMap> GetRasterizationRateMap() const;
+
+    HGIMETAL_API
+    void OverrideViewport(const MTLViewport& viewport);
+
+    HGIMETAL_API
+    void ResetViewport();
+
+    HGIMETAL_API
+    MTLViewport ConvertViewport(const GfVec4i& viewport);
+
+    HGIMETAL_API
+    void EnableTextureResolve(bool val);
+
+    HGIMETAL_API
+    bool AreTextureResolvesEnabled() const;
+
+    HGIMETAL_API
+    void EnableVisionOSOverrides(bool val);
+
+    HGIMETAL_API
+    bool AreVisionOSOverridesEnabled() const;
+
     HGIMETAL_API
     id<MTLArgumentEncoder> GetBufferArgumentEncoder() const;
     HGIMETAL_API
@@ -215,6 +242,11 @@ private:
     id<MTLArgumentEncoder> _argEncoderBuffer;
     id<MTLArgumentEncoder> _argEncoderSampler;
     id<MTLArgumentEncoder> _argEncoderTexture;
+    id<MTLRasterizationRateMap> _rasterizationMap;
+
+    MTLViewport _viewport;
+    bool _enableTextureResolves;
+    bool _enableVisionOSOverrides;
 
     using _FreeArgStack = std::stack<id<MTLBuffer>>;
     using _ActiveArgBuffers = std::vector<id<MTLBuffer>>;

@@ -21,6 +21,8 @@
 
 #include "pxr/base/arch/defines.h"
 
+#include <iostream>
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 HgiMetalGraphicsCmds::CachedEncoderState::CachedEncoderState()
@@ -90,6 +92,10 @@ HgiMetalGraphicsCmds::HgiMetalGraphicsCmds(
     
     _renderPassDescriptor = [[MTLRenderPassDescriptor alloc] init];
 
+    if (hgi->GetRasterizationRateMap() != nil) {
+        _renderPassDescriptor.rasterizationRateMap = hgi->GetRasterizationRateMap();
+    }
+
     // The GPU culling pass is only a vertex shader, so it doesn't have any
     // render targets bound to it.  To prevent an API validation error, set
     // some default values for the target.
@@ -115,7 +121,14 @@ HgiMetalGraphicsCmds::HgiMetalGraphicsCmds(
         metalColorAttachment.loadAction =
                 HgiMetalConversions::GetAttachmentLoadOp(
                     hgiColorAttachment.loadOp);
-        
+        if (hgi->AreVisionOSOverridesEnabled()) {
+            std::cout << "Using Metal Color Attachment before change: " << metalColorAttachment.loadAction << std::endl;
+
+            metalColorAttachment.loadAction = MTLLoadActionClear;
+            // We should flip the viewport instead
+            // metalColorAttachment.yInvert = YES;
+        }
+
         metalColorAttachment.storeAction =
             HgiMetalConversions::GetAttachmentStoreOp(
                 hgiColorAttachment.storeOp);
@@ -125,15 +138,17 @@ HgiMetalGraphicsCmds::HgiMetalGraphicsCmds(
                 MTLClearColorMake(
                     clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
         }
-        
+        if (hgi->AreVisionOSOverridesEnabled()) {
+                metalColorAttachment.clearColor = MTLClearColorMake(0.0f, 0.0f, 0.0f, 0.0f);
+        }
         HgiMetalTexture *colorTexture =
             static_cast<HgiMetalTexture*>(desc.colorTextures[i].Get());
 
         TF_VERIFY(
             colorTexture->GetDescriptor().format == hgiColorAttachment.format);
         metalColorAttachment.texture = colorTexture->GetTextureId();
-        
-        if (resolvingColor) {
+
+        if (resolvingColor && hgi->AreTextureResolvesEnabled()) {
             HgiMetalTexture *resolveTexture =
                 static_cast<HgiMetalTexture*>(desc.colorResolveTextures[i].Get());
 
@@ -170,15 +185,21 @@ HgiMetalGraphicsCmds::HgiMetalGraphicsCmds(
                 hgiDepthAttachment.storeOp);
         
         metalDepthAttachment.clearDepth = hgiDepthAttachment.clearValue[0];
-        
+
+        if (hgi->AreVisionOSOverridesEnabled()) {
+            metalDepthAttachment.loadAction = MTLLoadActionClear;
+            metalDepthAttachment.clearDepth = 0.0f;
+            //metalDepthAttachment.yInvert = YES;
+        }
+
         HgiMetalTexture *depthTexture =
             static_cast<HgiMetalTexture*>(desc.depthTexture.Get());
         
         TF_VERIFY(
             depthTexture->GetDescriptor().format == hgiDepthAttachment.format);
         metalDepthAttachment.texture = depthTexture->GetTextureId();
-        
-        if (desc.depthResolveTexture) {
+
+        if (desc.depthResolveTexture && hgi->AreTextureResolvesEnabled()) {
             HgiMetalTexture *resolveTexture =
                 static_cast<HgiMetalTexture*>(desc.depthResolveTexture.Get());
 
@@ -204,8 +225,8 @@ HgiMetalGraphicsCmds::HgiMetalGraphicsCmds(
             stencilAttachment.clearStencil =
                 static_cast<uint32_t>(hgiDepthAttachment.clearValue[1]);
             stencilAttachment.texture = metalDepthAttachment.texture;
-            
-            if (desc.depthResolveTexture) {
+
+            if (desc.depthResolveTexture && hgi->AreTextureResolvesEnabled()) {
                 stencilAttachment.resolveTexture =
                     metalDepthAttachment.resolveTexture;
                 stencilAttachment.stencilResolveFilter =
@@ -334,8 +355,8 @@ HgiMetalGraphicsCmds::_SetNumberParallelEncoders(uint32_t numEncoders)
         if (numActiveEncoders >= 1) {
             return;
         }
-        
-        id<MTLRenderCommandEncoder> encoder = 
+
+        id<MTLRenderCommandEncoder> encoder =
             [_hgi->GetPrimaryCommandBuffer(this, false)
              renderCommandEncoderWithDescriptor:_renderPassDescriptor];
         if (_debugLabel) {
@@ -404,17 +425,7 @@ HgiMetalGraphicsCmds::_SyncArgumentBuffer()
 void
 HgiMetalGraphicsCmds::SetViewport(GfVec4i const& vp)
 {
-    double x = vp[0];
-    double y = vp[1];
-    double w = vp[2];
-    double h = vp[3];
-
-    // Viewport is inverted in the y. Along with the front face winding order
-    // being inverted.
-    // This combination allows us to emulate the OpenGL coordinate space on
-    // Metal
-    _CachedEncState.viewport = (MTLViewport){x, y+h, w, -h, 0.0, 1.0};
-    
+    _CachedEncState.viewport = _hgi->ConvertViewport(vp);
     for (auto& encoder : _encoders) {
         [encoder setViewport:_CachedEncState.viewport];
     }

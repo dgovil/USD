@@ -1883,7 +1883,7 @@ UsdImagingGLEngine::_MakeHydraUsdImagingGLRenderParams(
     // We don't provide the following because task controller ignores them:
     // - params.camera
     // - params.viewport
-
+    params.useAovMultiSample = renderParams.useAovMultiSample;
     return params;
 }
 

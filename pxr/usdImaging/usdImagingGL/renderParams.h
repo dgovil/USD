@@ -97,7 +97,7 @@ public:
     BBoxVector bboxes;
     GfVec4f bboxLineColor;
     float bboxLineDashSize;
-
+    bool useAovMultiSample;
     inline UsdImagingGLRenderParams();
 
     inline bool operator==(const UsdImagingGLRenderParams &other) const;
@@ -134,7 +134,8 @@ UsdImagingGLRenderParams::UsdImagingGLRenderParams() :
     clearColor(0,0,0,1),
     lut3dSizeOCIO(65),
     bboxLineColor(1),
-    bboxLineDashSize(3)
+    bboxLineDashSize(3),
+    useAovMultiSample(true)
 {
 }
 

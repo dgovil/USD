@@ -126,6 +126,11 @@ HgiMetal::HgiMetal(id<MTLDevice> device)
     
     [[MTLCaptureManager sharedCaptureManager]
         setDefaultCaptureScope:_captureScopeFullFrame];
+
+    _rasterizationMap = nil;
+    ResetViewport();
+    _enableTextureResolves = true;
+    _enableVisionOSOverrides = false;
 }
 
 HgiMetal::~HgiMetal()
@@ -469,6 +474,59 @@ HgiMetal::ReleaseSecondaryCommandBuffer(id<MTLCommandBuffer> commandBuffer)
 {
     [commandBuffer release];
 }
+
+void
+HgiMetal::SetRasterizationRateMap(id <MTLRasterizationRateMap> rasterizationMap) {
+    _rasterizationMap = rasterizationMap;
+}
+
+id<MTLRasterizationRateMap>
+HgiMetal::GetRasterizationRateMap() const {
+    return _rasterizationMap;
+}
+
+void HgiMetal::OverrideViewport(const MTLViewport& viewport) {
+    _viewport = viewport;
+}
+
+void HgiMetal::ResetViewport() {
+    _viewport = (MTLViewport){0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+}
+
+MTLViewport HgiMetal::ConvertViewport(const GfVec4i& viewport) {
+    if (_viewport.originX != 0.0 || _viewport.originY != 0.0 || _viewport.width != 0.0 || _viewport.height != 0.0) {
+        return _viewport;
+    }
+
+    // Viewport is inverted in the y. Along with the front face winding order
+    // being inverted.
+    // This combination allows us to emulate the OpenGL coordinate space on
+    // Metal
+    double x = viewport[0];
+    double y = viewport[1];
+    double w = viewport[2];
+    double h = viewport[3];
+    return (MTLViewport){x, y+h, w, -h, 0.0, 1.0};
+}
+
+void HgiMetal::EnableTextureResolve(bool val) {
+    _enableTextureResolves = val;
+}
+
+
+bool HgiMetal::AreTextureResolvesEnabled() const {
+    return _enableTextureResolves;
+}
+
+void HgiMetal::EnableVisionOSOverrides(bool val) {
+    _enableVisionOSOverrides = val;
+}
+
+
+bool HgiMetal::AreVisionOSOverridesEnabled() const {
+    return _enableVisionOSOverrides;
+}
+
 
 id<MTLArgumentEncoder>
 HgiMetal::GetBufferArgumentEncoder() const
